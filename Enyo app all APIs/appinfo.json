@@ -1,0 +1,9 @@
+{
+  "id": "com.bluevia.bluevia4webos",
+  "version": "1.0.0",
+  "vendor": "BlueVia",
+  "type": "web",
+  "main": "index.html",
+  "title": "BlueVia 4 webOS",
+  "uiRevision": "2"
+}
