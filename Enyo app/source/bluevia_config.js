@@ -1,5 +1,5 @@
 /*
-Copyright 2010 Andres Leonardo Martinez Ortiz
+Copyright 2011 Bernhard Walter
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,5 +15,6 @@ limitations under the License.
 */
 var BlueViaConfig = { 
 	consumerKey   : "XXXX",
-	consumerSecret: "XXXX"
+	consumerSecret: "XXXX",
+	adSpaceId: "XXXX"
 };

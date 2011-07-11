@@ -1,5 +1,5 @@
 /*
-Copyright 2010 Andres Leonardo Martinez Ortiz
+Copyright 2011 Bernhard Walter
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 enyo.kind({
 	name: "MyApps.BlueViaLib",
 	kind: enyo.VFlexBox,
@@ -47,6 +46,10 @@ enyo.kind({
 			onSuccess: "gotUserContext",
 			onFailure: "failure"
 		},
+		{name: "getAds", kind: "WebService",
+			onSuccess: "gotAds",
+			onFailure: "failure"
+		},
 	],
 
 	// = = = = = = = = = = = = = = = = 
@@ -61,6 +64,7 @@ enyo.kind({
 		smsOutboundURL       = "https://api.bluevia.com/services/REST/SMS#env#/outbound/requests";
 		locationURL	         = "https://api.bluevia.com/services/REST/Location#env#/TerminalLocation";
 		userContextURL       = "https://api.bluevia.com/services/REST/Directory#env#/alias:#token#/UserInfo"
+		advertisingURL		 = "https://api.bluevia.com/services/REST/Advertising#env#/simple/requests"
 
 	    this.consumerSecret  = BlueViaConfig.consumerSecret;
 	    this.consumerKey     = BlueViaConfig.consumerKey;
@@ -76,7 +80,8 @@ enyo.kind({
 	        consumerSecret: this.consumerSecret,
 	        tokenSecret: ''
 	    };
-		this.sandbox = "_Sandbox"
+		this.sandbox = "_Sandbox";
+		this.apiVersion = "v1";
 		this.webView = null;
 		this.deliveryNotifications = {};
 	},
@@ -113,17 +118,17 @@ enyo.kind({
 		this.sandbox = (value) ? "_Sandbox" : "";
 	},
 	
-	httpCall: function(service, uid, callback, method, url, body, message) {
+	httpCall: function(service, uid, callback, method, url, body, message, contentType) {
 		// sign the call
 		OAuth.setTimestampAndNonce(message);
-        OAuth.SignatureMethod.sign(message, this.accessor);		
+        OAuth.SignatureMethod.sign(message, this.accessor);
 		var headers = {"Authorization":OAuth.getAuthorizationHeader("", message.parameters)}
-		
+
 		// set the http parameters ...
 		service.setUrl(url);
 		service.setMethod(method);
 		service.setHeaders(headers);
-		service.setContentType("application/json");
+		service.setContentType(contentType);
 
 		// ... and the internal parameters
 		service.cb = callback;    // call back to the view
@@ -215,7 +220,7 @@ enyo.kind({
 	// = = = = = = = = = = = = = = = = 
 	// Generic BlueVia oAuth calls
 	// = = = = = = = = = = = = = = = = 
-    sendCall: function(caller, uid, callback, method, pUrl, pParameters, body) {
+    sendCall: function(caller, uid, callback, method, pUrl, pParameters, body, contentType) {
         if (this.accessToken == null || this.accessTokenSecret == null) {
             enyo.log('Client doesn\'t have an access token.');
             return false;
@@ -223,18 +228,19 @@ enyo.kind({
 
         this.accessor.tokenSecret = this.accessTokenSecret;
 		
-		var url = pUrl;
+		var url = pUrl + "?version=" + this.apiVersion;
         var message = this.createMessage(pUrl);
         message.method = method;
         message.parameters.push(['oauth_token', this.accessToken]);
-        var delim = "?";
+        message.parameters.push(["version", this.apiVersion]);
+
 		for (p in pParameters) {
 			message.parameters.push(pParameters[p]);
-			url += delim + pParameters[p][0] + "=" + pParameters[p][1];
-			delim = "&";
+			if(contentType != "application/x-www-form-urlencoded")
+				url += "&" + pParameters[p][0] + "=" + pParameters[p][1];
 		}
-
-		this.httpCall(caller, uid, callback, method, url, body, message);
+		
+		this.httpCall(caller, uid, callback, method, url, body, message, contentType);
     },
 
 	// = = = = = = = = = = = = = = = = 
@@ -247,7 +253,7 @@ enyo.kind({
 		var uid = this.getUid();
 		this.deliveryNotifications[uid] = "ND"; // flag SMS as Not Delivered
 
-		this.sendCall(this.$.sendSMS, uid, callback, "POST", smsOutboundURL.replace("#env#", this.sandbox), [["version", "v1"]], enyo.json.stringify(body));
+		this.sendCall(this.$.sendSMS, uid, callback, "POST", smsOutboundURL.replace("#env#", this.sandbox), [], enyo.json.stringify(body), "application/json");
 		return uid;
 	},
 
@@ -261,11 +267,12 @@ enyo.kind({
 	// BlueVia track SMS (dlivery notification)
 	// = = = = = = = = = = = = = = = = 
 	trackSms: function(smsId, callback) {
-		result = this.sendCall(this.$.trackSMS, smsId, callback, "GET", this.deliveryNotifications[smsId], [["version", "v1"]], "");	
+		result = this.sendCall(this.$.trackSMS, smsId, callback, "GET", this.deliveryNotifications[smsId], [], "", "application/json");	
+		return true;
 	},
 
 	trackedSMS: function(inSender, inResponse, inRequest) {
-		enyo.log(inResponse);
+		// enyo.log(inResponse);
 		var tmp = inResponse.smsDeliveryStatus.smsDeliveryStatus[0];
 		inSender.cb(inSender.uid, inResponse);
 		// enyo.log(tmp.address.phoneNumber + " : " + tmp.deliveryStatus);		
@@ -275,11 +282,12 @@ enyo.kind({
 	// BlueVia locate Terminal
 	// = = = = = = = = = = = = = = = = 
 	locateTerminal: function(accuracy, callback) {
-		var parameters = [["alt","json"],["version","v1"],["locatedParty","alias:" + this.accessToken]];
+		var parameters = [["alt","json"],["version",this.apiVersion],["locatedParty","alias:" + this.accessToken]];
 		if(accuracy)
 			parameters.push(["acceptableAccuracy", accuracy.toString()]);
-		enyo.log("accuracy: "+ accuracy);
-		result = this.sendCall(this.$.locateTerminal, "", callback, "GET", locationURL.replace("#env#", this.sandbox), parameters, "");	
+
+		result = this.sendCall(this.$.locateTerminal, "", callback, "GET", locationURL.replace("#env#", this.sandbox), parameters, "", "application/json");	
+		return true;
 	},
 
 	locatedTerminal: function(inSender, inResponse, inRequest) {
@@ -293,10 +301,52 @@ enyo.kind({
 	getUserContext: function(type, callback) {
 		if(type != "") type = "/" + type;
 		var url = userContextURL.replace("#env#", this.sandbox).replace("#token#", this.accessToken) + type;
-		result = this.sendCall(this.$.getUserContext, "", callback, "GET", url, [["alt","json"],["version","v1"]], "");	
+		result = this.sendCall(this.$.getUserContext, "", callback, "GET", url, [["alt","json"]], "", "application/json");	
+		return true;
 	},
 	gotUserContext: function(inSender, inResponse, inRequest) {
-		enyo.log(inResponse);
+		// enyo.log(inResponse);
 		inSender.cb(inResponse);
+	},	
+
+	// = = = = = = = = = = = = = = = = 
+	// BlueVia Advertising
+	// = = = = = = = = = = = = = = = = 
+	getAds3: function(type, userAgent, keywords, protectionPolicy, callback) { // 3 legged advertising API
+		var adType = (type == "image") ? "0101" : "0104";
+		var parameters = [["ad_request_id", this.getUid()], ["ad_representation", adType], ["ad_space", BlueViaConfig.adSpaceId], ["user_agent", userAgent]];
+		if (keywords)
+			parameters.push(["keywords", keywords.join("|")]);
+		if (protectionPolicy)
+			parameters.push(["protection_policy", protectionPolicy]);
+		var url = advertisingURL.replace("#env#", this.sandbox);
+
+		result = this.sendCall(this.$.getAds, "", callback, "POST", url, parameters, OAuth.formEncode(parameters), "application/x-www-form-urlencoded");	
+		return true;
+	},
+	gotAds: function(inSender, inResponse, inRequest) {
+		var parser = new DOMParser();
+		xmlDoc = parser.parseFromString (inResponse, "text/xml");
+		var adId = xmlDoc.getElementsByTagName ("ad")[0].attributes.getNamedItem("id").value;
+		var adPl = xmlDoc.getElementsByTagName ("ad")[0].attributes.getNamedItem("ad_placement").value;
+		var adCa = xmlDoc.getElementsByTagName ("ad")[0].attributes.getNamedItem("campaign").value;
+		var adFl = xmlDoc.getElementsByTagName ("ad")[0].attributes.getNamedItem("flight").value;
+		var adRp = xmlDoc.getElementsByTagName ("resource")[0].attributes.getNamedItem("ad_presentation").value;
+		var ceTp = xmlDoc.getElementsByTagName ("creative_element")[0].attributes.getNamedItem("type").value;
+		var ceIn = xmlDoc.getElementsByTagName ("interaction")[0].attributes.getNamedItem("type").value;
+		var ceLo = xmlDoc.getElementsByTagName ("attribute")[0].childNodes[0].nodeValue;
+		var ceLT = xmlDoc.getElementsByTagName ("attribute")[0].attributes.getNamedItem("type").value;
+		var ceUr = xmlDoc.getElementsByTagName ("attribute")[1].childNodes[0].nodeValue;
+		var ceUT = xmlDoc.getElementsByTagName ("attribute")[1].attributes.getNamedItem("type").value;
+		
+		var result = {"ad": {"id":adId, 
+		                     "ad_place_ment":adPl, 
+							 "campaign":adCa, 
+							 "flight":adFl, 
+		                     "resource":{"ad_representation":adRp, 
+		                                 "creative_element":{"type":ceTp,
+		                                                     "attribute":{"type": ceLT, "value":ceLo},
+															 "interaction":{"type":ceIn, "attribute":{"type":ceUT, "value":ceUr}}}}}}					 
+		inSender.cb(result);
 	}	
 });

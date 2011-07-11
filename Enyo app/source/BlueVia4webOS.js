@@ -1,5 +1,5 @@
 /*
-Copyright 2010 Andres Leonardo Martinez Ortiz
+Copyright 2011 Bernhard Walter
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -50,6 +50,10 @@ enyo.kind({
 							{name: "userContext", content: "No info", style: "text-align:center;"},
 							{                     kind: "Button", style: "width: 60%; margin:auto;",   caption: "User Info", onclick: "btnUserContext"}
 						]},
+						{kind: "RowGroup", name:"getAds", caption: "Advertising", components: [
+							{name: "advertising", content: "No ad", style: "text-align:center;"},
+							{                     kind: "Button", style: "width: 60%; margin:auto;",   caption: "Advertising", onclick: "btnAdvertising"}
+						]},
 					]
 				},
 				{name: "authorize", className: "enyo-bg", kind: "Scroller", 
@@ -79,7 +83,7 @@ enyo.kind({
 		// 		this.$.bluevialib.setAccessToken(token[0], token[1]); 
 		// else authentication will happen
 		
-		// this.$.bluevialib.setAccessToken("accessToken", "accessTokenSecret"); 
+		// this.$.bluevialib.setAccessToken("XXXX", "XXXX"); 
 		
 		// turn sandbox on
 		this.setSandbox(true);
@@ -172,6 +176,22 @@ enyo.kind({
 	userContextCallback: function(info) {
 		enyo.log("userContext: " + info);
 		thisObj.$.userContext.setContent(enyo.json.stringify(info));
+	},
+
+	// = = = = = = = = = = = = = = = = 
+	// advertising
+	// = = = = = = = = = = = = = = = = 
+	btnAdvertising: function() {
+		var type = "image";
+		var userAgent = "none";
+		var keywords = ["sports", "entertainment"];
+		var protectionPolicy = 1;
+		this.$.bluevialib.getAds3(type, userAgent, keywords, protectionPolicy, this.advertisingCallback)
+	},
+	
+	advertisingCallback: function(info) {
+		enyo.log("advertising: " + enyo.json.stringify(info));
+		thisObj.$.advertising.setContent(enyo.json.stringify(info));
 	},
 
 	// = = = = = = = = = = = = = = = = 
